@@ -1,7 +1,7 @@
 // Service worker: permite instalar la app y abrirla rápido.
 // Siempre intenta traer la versión más nueva; si no hay internet, usa la guardada.
-const CACHE = 'vencidos-v2';
-const BASE = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
+const CACHE = 'vencidos-v3';
+const BASE = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './logo.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(BASE)).then(() => self.skipWaiting()));

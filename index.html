@@ -23,6 +23,7 @@
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;background:var(--bg);color:var(--txt);font-family:var(--font)}
+  body{overscroll-behavior-y:contain}
   button,input,textarea{font-family:var(--font)}
   button{cursor:pointer}
   .vista{display:none}
@@ -119,6 +120,9 @@
   .tags{display:flex;flex-wrap:wrap;gap:6px}
   .tag{font-size:12px;padding:4px 9px;border-radius:8px;background:#eef4f5;color:var(--azul);font-weight:700}
   .tag.multi{background:var(--naranja);color:#fff}
+  .tag.lock{background:#fdecec;color:var(--rojo)}
+  .prod.bloq{opacity:.6}
+  .prod.bloq .flecha{font-size:20px}
   .prod .flecha{font-size:26px;color:#b8c4c9;font-weight:700}
   .mas{text-align:center;color:var(--muted);font-size:13px;padding:10px}
 
@@ -152,6 +156,10 @@
   .invalid{border-color:var(--rojo)!important;animation:shake .3s}
   @keyframes shake{25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
 
+  .ptr{position:fixed;top:0;left:50%;transform:translate(-50%,-60px);z-index:25;background:#fff;color:var(--teal);font-weight:800;font-size:14px;padding:10px 18px;border-radius:30px;box-shadow:0 6px 18px rgba(0,0,0,.15);transition:transform .15s;display:flex;align-items:center;gap:8px;pointer-events:none}
+  .ptr .ic{display:inline-block;transition:transform .15s}
+  .ptr.listo .ic{transform:rotate(180deg)}
+  .ptr.girando .ic{animation:gira .8s linear infinite}
   .toast{position:fixed;left:50%;top:18px;transform:translate(-50%,-150px);background:var(--azul);color:#fff;padding:14px 22px;border-radius:14px;font-weight:700;z-index:60;transition:transform .3s;max-width:92%;text-align:center;box-shadow:0 8px 22px rgba(0,0,0,.2)}
   .toast.show{transform:translate(-50%,0)} .toast.err{background:var(--rojo)} .toast.ok{background:var(--verde2)}
 </style>
@@ -260,6 +268,7 @@
   </div>
 </div>
 
+<div class="ptr" id="ptr"><span class="ic">↓</span><span id="ptrTxt">Desliza para actualizar</span></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -277,6 +286,11 @@ let cfg = LS.get('vv_cfg', { url: DEFAULT_URL, token: '' });
 if(!cfg.url && DEFAULT_URL) cfg.url = DEFAULT_URL;
 let user = LS.get('vv_user', null);
 let sucursal = '', productos = [], total = 0, pend = 0, actual = null, ventanaTxt = '';
+/* ===== Tiempo real ===== */
+const CADA_SEG = 1;   // cada cuántos segundos se revisan cambios de otras sesiones
+const SESION = (() => { let s = localStorage.getItem('vv_sesion'); if(!s){ s = Date.now().toString(36) + Math.random().toString(36).slice(2, 8); try{ localStorage.setItem('vv_sesion', s); }catch(e){} } return s; })();
+let locks = [], refrescoPendiente = false, ultimoVisto = 0, consultando = false;
+function lockDe(codigo){ const c = String(codigo).trim().toUpperCase(); return locks.find(l => l.hoja === sucursal && l.codigo === c && l.sesion !== SESION); }
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -324,6 +338,59 @@ async function cargarTodo(fresco){
 }
 
 // Al volver a abrir la app (o regresar a la pestaña) trae los cambios de la hoja en segundo plano
+async function revisarCambios(){
+  if(!user || !cfg.url || document.visibilityState !== 'visible' || consultando) return;
+  consultando = true;
+  try{
+    const e = await apiGet({ action: 'estado' });
+    const antes = JSON.stringify(locks.filter(l => l.hoja === sucursal));
+    locks = e.locks || [];
+    const u = e.ultimo;
+    if(u && u.ts > ultimoVisto){
+      if(ultimoVisto && u.sesion !== SESION && u.nombre) toast(`🔄 ${u.nombre} actualizó ${u.codigo}${u.hoja !== sucursal ? ' en ' + u.hoja : ''}`);
+      ultimoVisto = u.ts;
+    }
+    if(datos && e.ver !== datos.ver){
+      datos.ver = e.ver;
+      if($('modalProd').style.display === 'flex') refrescoPendiente = true;
+      else await cargarTodo(false);
+    } else if(sucursal && $('modalProd').style.display !== 'flex' && antes !== JSON.stringify(locks.filter(l => l.hoja === sucursal))) {
+      pintarLista();   // cambió quién está revisando qué
+    }
+  }catch(err){}
+  finally{ consultando = false; }
+}
+setInterval(revisarCambios, CADA_SEG * 1000);
+
+/* ===== Deslizar hacia abajo para actualizar ===== */
+(() => {
+  let y0 = null, dy = 0; const UMBRAL = 80, ptr = $('ptr');
+  const abierto = () => document.querySelector('.modal[style*="flex"]') || $('drawer').classList.contains('on');
+  document.addEventListener('touchstart', e => {
+    if(!user || abierto() || window.scrollY > 0) { y0 = null; return; }
+    y0 = e.touches[0].clientY; dy = 0;
+  }, { passive: true });
+  document.addEventListener('touchmove', e => {
+    if(y0 === null) return;
+    dy = e.touches[0].clientY - y0;
+    if(dy <= 0){ ptr.style.transform = 'translate(-50%,-60px)'; return; }
+    const d = Math.min(dy, 140);
+    ptr.style.transform = `translate(-50%,${d * 0.6 - 10}px)`;
+    ptr.classList.toggle('listo', dy > UMBRAL);
+    $('ptrTxt').textContent = dy > UMBRAL ? 'Suelta para actualizar' : 'Desliza para actualizar';
+  }, { passive: true });
+  document.addEventListener('touchend', async () => {
+    if(y0 === null) return;
+    const ir = dy > UMBRAL; y0 = null;
+    if(!ir){ ptr.style.transform = 'translate(-50%,-60px)'; ptr.classList.remove('listo'); return; }
+    ptr.classList.remove('listo'); ptr.classList.add('girando');
+    ptr.style.transform = 'translate(-50%,24px)'; $('ptrTxt').textContent = 'Actualizando…';
+    try{ await cargarTodo(true); }finally{
+      ptr.classList.remove('girando'); ptr.style.transform = 'translate(-50%,-60px)';
+    }
+  });
+})();
+
 document.addEventListener('visibilitychange', () => {
   if(document.visibilityState === 'visible' && user && $('modalProd').style.display !== 'flex') cargarTodo(false);
 });
@@ -422,7 +489,9 @@ function pintarLista(){
     const tags = p.fechas.length > 1
       ? `<span class="tag multi">${p.fechas.length} fechas</span>` + p.fechas.map(x => `<span class="tag">${esc(x.fecha)}</span>`).join('')
       : `<span class="tag">Vence ${esc(p.fechas[0].fecha)}</span><span class="tag">Cant. actual ${esc(p.fechas[0].cantidad || 0)}</span>`;
-    return `<div class="prod" data-i="${productos.indexOf(p)}"><div class="t"><div class="cod">${esc(p.codigo)}</div><div class="nom">${esc(p.nombre)}</div><div class="tags">${tags}</div></div><div class="flecha">›</div></div>`;
+    const lk = lockDe(p.codigo);
+    const tagLock = lk ? `<span class="tag lock">🔒 ${esc(lk.nombre)} lo está revisando</span>` : '';
+    return `<div class="prod ${lk ? 'bloq' : ''}" data-i="${productos.indexOf(p)}"><div class="t"><div class="cod">${esc(p.codigo)}</div><div class="nom">${esc(p.nombre)}</div><div class="tags">${tagLock}${tags}</div></div><div class="flecha">${lk ? '🔒' : '›'}</div></div>`;
   }).join('') + (f.length > MAX_LISTA ? `<div class="mas">Mostrando ${MAX_LISTA} de ${f.length}. Usa el buscador para encontrar el resto.</div>` : '');
   document.querySelectorAll('.prod').forEach(el => el.onclick = () => abrirProducto(+el.dataset.i));
 }
@@ -430,8 +499,28 @@ $('q').oninput = () => { $('qClear').style.display = $('q').value ? 'block' : 'n
 $('qClear').onclick = () => { $('q').value = ''; $('qClear').style.display = 'none'; pintarLista(); $('q').focus(); };
 
 /* ================= FICHA DEL PRODUCTO ================= */
-function abrirProducto(i){
-  const p = productos[i]; actual = i;
+let prodActual = null, latido = null, abriendo = false;
+async function abrirProducto(i){
+  const p = productos[i]; if(!p || abriendo) return;
+  const lk = lockDe(p.codigo);
+  if(lk) return avisoOcupado(lk.nombre, lk.sesion === SESION);
+  abriendo = true; toast('Abriendo…');
+  try{
+    const r = await apiPost({ action: 'bloquear', hoja: sucursal, codigo: p.codigo, usuario: user.usuario, nombre: user.nombre, sesion: SESION });
+    if(!r.ok) return avisoOcupado(r.nombre, false, r.mismoUsuario);
+  }catch(e){ return toast('Sin conexión: no se pudo abrir el producto', 'err'); }
+  finally{ abriendo = false; }
+  $('toast').className = 'toast';
+  prodActual = p;
+  clearInterval(latido);
+  latido = setInterval(() => { if(prodActual) apiPost({ action: 'bloquear', hoja: sucursal, codigo: prodActual.codigo, usuario: user.usuario, nombre: user.nombre, sesion: SESION }).catch(()=>{}); }, 30000);
+  mostrarFicha(p);
+}
+function avisoOcupado(nombre, yo, mismoUsuario){
+  const quien = yo ? 'tú en otra pantalla' : mismoUsuario ? `${nombre} (en otra sesión)` : nombre;
+  toast(`🔒 Este producto lo está revisando ${quien}`, 'err');
+}
+function mostrarFicha(p){
   $('mCod').textContent = p.codigo; $('mNom').textContent = p.nombre; $('mObs').value = '';
   const n = p.fechas.length;
   $('mAviso').style.display = n > 1 ? 'block' : 'none';
@@ -467,11 +556,21 @@ function abrirProducto(i){
   $('modalProd').style.display = 'flex';
   setTimeout(() => $('c0').focus(), 250);
 }
-function cerrarProducto(){ $('modalProd').style.display = 'none'; actual = null; }
+function cerrarProducto(){
+  $('modalProd').style.display = 'none';
+  clearInterval(latido);
+  if(prodActual) apiPost({ action: 'liberar', hoja: sucursal, codigo: prodActual.codigo, sesion: SESION }).catch(()=>{});
+  prodActual = null;
+  if(refrescoPendiente){ refrescoPendiente = false; cargarTodo(false); }
+}
+// Si cierran la app con un producto abierto, se libera
+window.addEventListener('pagehide', () => {
+  if(prodActual && cfg.url) fetch(cfg.url, { method: 'POST', keepalive: true, body: JSON.stringify({ action: 'liberar', hoja: sucursal, codigo: prodActual.codigo, sesion: SESION, token: cfg.token || '' }) }).catch(()=>{});
+});
 $('mCancel').onclick = cerrarProducto;
 
 $('mSave').onclick = async () => {
-  const p = productos[actual]; if(!p) return;
+  const p = prodActual; if(!p) return;
   const items = []; let error = '';
   p.fechas.forEach((f, k) => {
     const c = $('c' + k), l = $('l' + k), v = c.value.trim();
@@ -484,18 +583,18 @@ $('mSave').onclick = async () => {
 
   const btn = $('mSave'); btn.disabled = true; btn.textContent = 'Guardando…';
   try{
-    const j = await apiPost({ action: 'actualizar', hoja: sucursal, items });
+    const j = await apiPost({ action: 'actualizar', hoja: sucursal, items, usuario: user.usuario, nombre: user.nombre, sesion: SESION });
     if(!j.resultados) throw new Error(j.error || 'Error al guardar');
     const okF = j.resultados.filter(r => r.ok).map(r => r.fecha);
     const fallos = j.resultados.filter(r => !r.ok);
     p.fechas = p.fechas.filter(f => !okF.includes(f.fecha));
     pend = Math.max(0, pend - okF.length);
-    if(!p.fechas.length) productos.splice(actual, 1);
+    if(!p.fechas.length && productos.indexOf(p) !== -1) productos.splice(productos.indexOf(p), 1);
     sincronizar();
     pintarResumen(); pintarLista();
     if(fallos.length){
       toast(`${fallos[0].fecha}: ${fallos[0].error}`, 'err');
-      p.fechas.length ? abrirProducto(productos.indexOf(p)) : cerrarProducto();
+      p.fechas.length ? mostrarFicha(p) : cerrarProducto();
     } else {
       cerrarProducto();
       toast(`✓ ${p.codigo} actualizado`, 'ok');
@@ -521,7 +620,7 @@ $('cfgTest').onclick = async () => {
     j.ok ? toast(`Conectado a "${j.libro}" ✓`, 'ok') : toast(j.error || 'Respuesta inválida', 'err');
   }catch(e){ toast('No se pudo conectar. Revisa la URL.', 'err'); }
 };
-document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => { if(e.target === m) m.style.display = 'none'; }));
+document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => { if(e.target === m){ m.id === 'modalProd' ? cerrarProducto() : (m.style.display = 'none'); } }));
 
 /* ================= INSTALAR (PWA) ================= */
 if('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(()=>{});

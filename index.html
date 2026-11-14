@@ -514,20 +514,23 @@ $('qClear').onclick = () => { $('q').value = ''; $('qClear').style.display = 'no
 /* ================= FICHA DEL PRODUCTO ================= */
 let prodActual = null, latido = null, abriendo = false;
 async function abrirProducto(i){
-  const p = productos[i]; if(!p || abriendo) return;
+  const p = productos[i]; if(!p) return;
   const lk = lockDe(p.codigo);
   if(lk) return avisoOcupado(lk.nombre, lk.sesion === SESION);
-  abriendo = true; toast('Abriendo…');
-  try{
-    const r = await apiPost({ action: 'bloquear', hoja: sucursal, codigo: p.codigo, usuario: user.usuario, nombre: user.nombre, sesion: SESION });
-    if(!r.ok) return avisoOcupado(r.nombre, false, r.mismoUsuario);
-  }catch(e){ return toast('Sin conexión: no se pudo abrir el producto', 'err'); }
-  finally{ abriendo = false; }
-  $('toast').className = 'toast';
+  // Se abre al instante; el apartado se confirma con el servidor en segundo plano
   prodActual = p;
-  clearInterval(latido);
-  latido = setInterval(() => { if(prodActual) apiPost({ action: 'bloquear', hoja: sucursal, codigo: prodActual.codigo, usuario: user.usuario, nombre: user.nombre, sesion: SESION }).catch(()=>{}); }, 30000);
   mostrarFicha(p);
+  const bloq = () => apiPost({ action: 'bloquear', hoja: sucursal, codigo: p.codigo, usuario: user.usuario, nombre: user.nombre, sesion: SESION });
+  clearInterval(latido);
+  latido = setInterval(() => { if(prodActual === p) bloq().catch(()=>{}); }, 30000);
+  try{
+    const r = await bloq();
+    if(!r.ok && prodActual === p){
+      clearInterval(latido); prodActual = null;
+      $('modalProd').style.display = 'none';
+      avisoOcupado(r.nombre, false, r.mismoUsuario);
+    }
+  }catch(e){ /* sin conexión: el servidor igual valida al guardar */ }
 }
 function avisoOcupado(nombre, yo, mismoUsuario){
   const quien = yo ? 'tú en otra pantalla' : mismoUsuario ? `${nombre} (en otra sesión)` : nombre;

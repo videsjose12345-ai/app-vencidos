@@ -118,7 +118,7 @@
   .buscar button{border:0;background:#eef2f3;width:32px;height:32px;border-radius:50%;color:var(--muted);display:none}
   .info{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:14px;margin:0 6px 10px}
   .info button{border:0;background:transparent;color:var(--teal);font-weight:800;font-size:14px}
-  .prod{background:#fff;border-radius:18px;padding:16px 18px;margin-bottom:10px;display:flex;align-items:center;gap:12px;box-shadow:0 2px 12px rgba(0,0,0,.04);border:2px solid transparent}
+  .prod{content-visibility:auto;contain-intrinsic-size:auto 120px;background:#fff;border-radius:18px;padding:16px 18px;margin-bottom:10px;display:flex;align-items:center;gap:12px;box-shadow:0 2px 12px rgba(0,0,0,.04);border:2px solid transparent}
   .prod:active{border-color:var(--verde1)}
   .prod .t{flex:1;min-width:0}
   .prod .cod{font-size:13px;font-weight:800;color:var(--teal)}
@@ -299,6 +299,10 @@ function lockDe(codigo){ const c = String(codigo).trim().toUpperCase(); return l
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmtCant = v => { const n = Number(String(v ?? '').replace(',', '.')); return (v === '' || v == null || isNaN(n)) ? (v || 0) : String(parseFloat(n.toFixed(10))); };
+// Cantidad: entero o con hasta 10 decimales (acepta punto o coma)
+const RX_CANT = /^\d+([.,]\d{1,10})?$/;
+const leerCant = v => { v = String(v).trim(); return RX_CANT.test(v) ? Number(v.replace(',', '.')) : NaN; };
 const norm = s => String(s ?? '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 function toast(msg, tipo=''){
@@ -494,14 +498,14 @@ function pintarLista(){
   $('infoTxt').textContent = q ? `${f.length} resultado${f.length === 1 ? '' : 's'}` : `${productos.length} producto${productos.length === 1 ? '' : 's'} pendiente${productos.length === 1 ? '' : 's'}`;
   if(!productos.length){ $('lista').innerHTML = '<div class="vacio"><b>🎉</b>¡Todo actualizado en esta sucursal para este mes!</div>'; return; }
   if(!f.length){ $('lista').innerHTML = '<div class="vacio"><b>🔍</b>Sin coincidencias pendientes</div>'; return; }
-  $('lista').innerHTML = f.slice(0, MAX_LISTA).map(p => {
+  $('lista').innerHTML = f.map(p => {
     const tags = p.fechas.length > 1
       ? `<span class="tag multi">${p.fechas.length} fechas</span>` + p.fechas.map(x => `<span class="tag">${esc(x.fecha)}</span>`).join('')
-      : `<span class="tag">Vence ${esc(p.fechas[0].fecha)}</span><span class="tag">Cant. actual ${esc(p.fechas[0].cantidad || 0)}</span>`;
+      : `<span class="tag">Vence ${esc(p.fechas[0].fecha)}</span><span class="tag">Cant. actual ${esc(fmtCant(p.fechas[0].cantidad))}</span>`;
     const lk = lockDe(p.codigo);
     const tagLock = lk ? `<span class="tag lock">🔒 ${esc(lk.nombre)} lo está revisando</span>` : '';
     return `<div class="prod ${lk ? 'bloq' : ''}" data-i="${productos.indexOf(p)}"><div class="t"><div class="cod">${esc(p.codigo)}</div><div class="nom">${esc(p.nombre)}</div><div class="tags">${tagLock}${tags}</div></div><div class="flecha">${lk ? '🔒' : '›'}</div></div>`;
-  }).join('') + (f.length > MAX_LISTA ? `<div class="mas">Mostrando ${MAX_LISTA} de ${f.length}. Usa el buscador para encontrar el resto.</div>` : '');
+  }).join('');
   document.querySelectorAll('.prod').forEach(el => el.onclick = () => abrirProducto(+el.dataset.i));
 }
 $('q').oninput = () => { $('qClear').style.display = $('q').value ? 'block' : 'none'; pintarLista(); };
@@ -538,11 +542,11 @@ function mostrarFicha(p){
     <div class="bloque" id="b${k}">
       <div class="fh">
         <div class="fecha"><small>VENCE</small>${esc(f.fecha)}</div>
-        <div class="actual">Cantidad actual<b>${esc(f.cantidad || 0)}</b></div>
+        <div class="actual">Cantidad actual<b>${esc(fmtCant(f.cantidad))}</b></div>
       </div>
       <label>Cantidad nueva *</label>
       <div class="row">
-        <input class="campo" id="c${k}" type="number" inputmode="numeric" min="0" step="1" placeholder="0">
+        <input class="campo" id="c${k}" type="text" inputmode="decimal" autocomplete="off" placeholder="0">
         <button type="button" class="btn-cero" id="z${k}">YA NO HAY (0)</button>
       </div>
       <label>Lote de esta fecha</label>
@@ -552,14 +556,14 @@ function mostrarFicha(p){
   p.fechas.forEach((f, k) => {
     const c = $('c' + k), l = $('l' + k), z = $('z' + k);
     const sync = () => {
-      const v = c.value.trim(), cero = v !== '' && Number(v) === 0;
+      const v = c.value.trim(), cero = v !== '' && leerCant(v) === 0;
       l.disabled = cero; if(cero) l.value = '';
       z.classList.toggle('on', cero);
       $('m' + k).textContent = v === '' ? '' : cero ? 'Sin existencias: se guarda en 0 y sin lote' : 'Ingresa el lote de esta fecha';
       $('b' + k).classList.remove('err');
     };
     c.oninput = sync;
-    z.onclick = () => { c.value = (c.value.trim() !== '' && Number(c.value) === 0) ? '' : '0'; sync(); };
+    z.onclick = () => { c.value = (c.value.trim() !== '' && leerCant(c.value) === 0) ? '' : '0'; sync(); };
     c.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); (l.disabled ? ($('c' + (k + 1)) || $('mSave')) : l).focus(); } };
   });
   $('modalProd').style.display = 'flex';
@@ -583,8 +587,8 @@ $('mSave').onclick = async () => {
   const items = []; let error = '';
   p.fechas.forEach((f, k) => {
     const c = $('c' + k), l = $('l' + k), v = c.value.trim();
-    if(v === '' || isNaN(v) || Number(v) < 0 || !Number.isInteger(Number(v))){ marcar(c); $('b' + k).classList.add('err'); error = error || 'Ingresa la cantidad nueva de cada fecha'; return; }
-    const cant = Number(v);
+    if(v === '' || isNaN(leerCant(v))){ marcar(c); $('b' + k).classList.add('err'); error = error || (v === '' ? 'Ingresa la cantidad nueva de cada fecha' : 'Cantidad inválida: usa números con máximo 10 decimales'); return; }
+    const cant = leerCant(v);
     if(cant > 0 && !l.value.trim()){ marcar(l); $('b' + k).classList.add('err'); error = error || `Falta el lote de la fecha ${f.fecha}`; return; }
     items.push({ codigo: p.codigo, fecha: f.fecha, cantidad: cant, lote: cant > 0 ? l.value.trim().toUpperCase() : '', obs: $('mObs').value.trim() });
   });

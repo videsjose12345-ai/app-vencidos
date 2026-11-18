@@ -186,7 +186,7 @@
       <div class="err-login" id="errLogin"></div>
     </div>
     <button type="button" class="btn-instalar" id="btnInstalar" style="display:none">📲 Instalar app en este teléfono</button>
-    <div class="pie">v1.0.0 · 2026 · 🔒 Conexión segura<br><a href="#" id="lnkCfg">Configurar conexión</a></div>
+    <div class="pie">v1.0.0 · 2026 · 🔒 Conexión segura</div>
   </form>
 </section>
 
@@ -406,7 +406,6 @@ document.addEventListener('visibilitychange', () => {
 
 /* ================= LOGIN ================= */
 $('verPass').onclick = () => { const p = $('lPass'); p.type = p.type === 'password' ? 'text' : 'password'; };
-$('lnkCfg').onclick = e => { e.preventDefault(); abrirCfg(); };
 $('fLogin').onsubmit = async e => {
   e.preventDefault();
   const u = $('lUser').value.trim(), c = $('lPass').value;
@@ -417,7 +416,7 @@ $('fLogin').onsubmit = async e => {
   try{
     const j = await apiPost({ action: 'login', usuario: u, clave: c });
     if(!j.ok) return mostrarErrLogin(j.error || 'No se pudo iniciar sesión');
-    user = { usuario: j.usuario, nombre: j.nombre };
+    user = { usuario: j.usuario, nombre: j.nombre, rol: j.rol || '' };
     LS.del('vv_user'); LS.set('vv_user', user, !$('lRec').checked);
     if(j.datos){ datos = j.datos; guardarDatos(); }
     $('lPass').value = '';
@@ -429,6 +428,8 @@ function mostrarErrLogin(m){ $('errLogin').textContent = m; $('errLogin').style.
 function entrar(recargar = true){
   vista('vApp');
   $('dNombre').textContent = user.nombre;
+  // Configuración solo para administradores (ROL = ADMIN en la pestaña USUARIOS)
+  $('mCfg').parentElement.style.display = user.rol === 'ADMIN' ? '' : 'none';
   const pn = user.nombre.split(' ')[0].toLowerCase();
   $('hola').textContent = `Hola, ${pn.charAt(0).toUpperCase() + pn.slice(1)} 👋`;
   irInicio();
@@ -441,7 +442,7 @@ $('btnMenu').onclick = () => menu(true);
 $('velo').onclick = () => menu(false);
 $('mInicio').onclick = () => { menu(false); irInicio(); };
 $('mRecargar').onclick = () => { menu(false); cargarTodo(true); };
-$('mCfg').onclick = () => { menu(false); abrirCfg(); };
+$('mCfg').onclick = () => { menu(false); if(user && user.rol === 'ADMIN') abrirCfg(); };
 $('mSalir').onclick = () => { menu(false); LS.del('vv_user'); user = null; vista('vLogin'); };
 
 /* ================= SUCURSALES ================= */

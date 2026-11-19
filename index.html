@@ -558,8 +558,8 @@ function mostrarFicha(p){
         <input class="campo" id="c${k}" type="text" inputmode="decimal" autocomplete="off" placeholder="0">
         <button type="button" class="btn-cero" id="z${k}">YA NO HAY (0)</button>
       </div>
-      <label>Lote de esta fecha</label>
-      <input class="campo" id="l${k}" placeholder="Obligatorio si hay unidades" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase">
+      <label>Lote de esta fecha *</label>
+      <input class="campo" id="l${k}" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase">
       <div class="nota" id="m${k}"></div>
       <label style="margin-top:4px">Proveedor (según viñeta)</label>
       <input class="campo" id="pv${k}" list="dlProv" placeholder="Ej. DROGUERÍA SANTA LUCÍA" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase" value="${esc(f.proveedor || '')}">

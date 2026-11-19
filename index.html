@@ -274,6 +274,7 @@
 </div>
 
 <div class="ptr" id="ptr"><span class="ic">↓</span><span id="ptrTxt">Desliza para actualizar</span></div>
+<datalist id="dlProv"></datalist>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -326,7 +327,11 @@ async function apiPost(body){
 
 /* ================= DATOS (una sola carga, guardada en el teléfono) ================= */
 let datos = LS.get('vv_datos', null), cargando = false;
-function guardarDatos(){ LS.set('vv_datos', datos); }
+function guardarDatos(){ LS.set('vv_datos', datos); pintarProveedores(); }
+function pintarProveedores(){
+  const l = (datos && datos.proveedores) || [];
+  $('dlProv').innerHTML = l.map(x => `<option value="${esc(x)}">`).join('');
+}
 function sucActual(){ return datos && datos.sucursales.find(s => s.nombre === sucursal); }
 
 async function cargarTodo(fresco){
@@ -556,12 +561,15 @@ function mostrarFicha(p){
       <label>Lote de esta fecha</label>
       <input class="campo" id="l${k}" placeholder="Obligatorio si hay unidades" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase">
       <div class="nota" id="m${k}"></div>
+      <label style="margin-top:4px">Proveedor (según viñeta)</label>
+      <input class="campo" id="pv${k}" list="dlProv" placeholder="Ej. DROGUERÍA SANTA LUCÍA" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase" value="${esc(f.proveedor || '')}">
     </div>`).join('');
   p.fechas.forEach((f, k) => {
     const c = $('c' + k), l = $('l' + k), z = $('z' + k);
     const sync = () => {
       const v = c.value.trim(), cero = v !== '' && leerCant(v) === 0;
       l.disabled = cero; if(cero) l.value = '';
+      $('pv' + k).disabled = cero;
       z.classList.toggle('on', cero);
       $('m' + k).textContent = v === '' ? '' : cero ? 'Sin existencias: se guarda en 0 y sin lote' : 'Ingresa el lote de esta fecha';
       $('b' + k).classList.remove('err');
@@ -594,7 +602,8 @@ $('mSave').onclick = async () => {
     if(v === '' || isNaN(leerCant(v))){ marcar(c); $('b' + k).classList.add('err'); error = error || (v === '' ? 'Ingresa la cantidad nueva de cada fecha' : 'Cantidad inválida: usa números con máximo 10 decimales'); return; }
     const cant = leerCant(v);
     if(cant > 0 && !l.value.trim()){ marcar(l); $('b' + k).classList.add('err'); error = error || `Falta el lote de la fecha ${f.fecha}`; return; }
-    items.push({ codigo: p.codigo, fecha: f.fecha, cantidad: cant, lote: cant > 0 ? l.value.trim().toUpperCase() : '', obs: $('mObs').value.trim() });
+    items.push({ codigo: p.codigo, fecha: f.fecha, cantidad: cant, lote: cant > 0 ? l.value.trim().toUpperCase() : '',
+                 proveedor: cant > 0 ? $('pv' + k).value.trim().toUpperCase() : '', obs: $('mObs').value.trim() });
   });
   if(error) return toast(error, 'err');
 
@@ -607,6 +616,7 @@ $('mSave').onclick = async () => {
     p.fechas = p.fechas.filter(f => !okF.includes(f.fecha));
     pend = Math.max(0, pend - okF.length);
     if(!p.fechas.length && productos.indexOf(p) !== -1) productos.splice(productos.indexOf(p), 1);
+    if(datos) items.forEach(it => { if(it.proveedor){ datos.proveedores = datos.proveedores || []; if(!datos.proveedores.includes(it.proveedor)) datos.proveedores.push(it.proveedor); } });
     sincronizar();
     pintarResumen(); pintarLista();
     if(fallos.length){
@@ -661,6 +671,7 @@ $('btnInstalar').onclick = instalar; $('mInstalar').onclick = instalar;
 window.addEventListener('appinstalled', () => { $('btnInstalar').style.display = 'none'; $('mInstalar').style.display = 'none'; });
 
 /* ================= INICIO ================= */
+pintarProveedores();
 if(user) entrar(); else { vista('vLogin'); if(cfg.url) fetch(cfg.url).catch(()=>{}); }   // despierta el servidor mientras escriben la clave
 </script>
 </body>
